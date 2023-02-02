@@ -1,16 +1,23 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, TextInput, TouchableOpacity, Text, FlatList, StyleSheet, Easing, Keyboard, Animated, KeyboardAvoidingView } from 'react-native';
 import Color from '../../utils/Colors';
 import ScaleSize from '../../utils/ScaleSize';
 import Sleep from '../../utils/Sleep';
 
 
-const SelectOption = ({ options, placeholder, hasSearch, validation = () => { return true }, onChange = () => { } }) => {
+const SelectOption = ({ options, placeholder, hasSearch, validation = () => { return true }, onChange = () => { }, errorMessage }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedValue, setSelectedValue] = useState('');
     const [selectedText, setSelectedText] = useState('');
+    const [errorMsg, setErrorMsg] = useState('');
     const [optionsHeight] = useState(new Animated.Value(0));
+    const [optionsRotate] = useState(new Animated.Value(1));
+    const spin = optionsRotate.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0 deg', '180 deg']
+    })
+
     const maxItemShow = 3;
 
     const [prevSelectedValue, setPrevSelectedValue] = useState('');
@@ -89,19 +96,25 @@ const SelectOption = ({ options, placeholder, hasSearch, validation = () => { re
     const handleSelect = (option) => {
         setSelectedValue(option.value);
         setSelectedText(option.label);
+        setSearchQuery(option.label)
         setPrevSelectedText(option.label)
         setPrevSelectedValue(option.value)
 
         onChange(option)
-        // setIsExpanded(false);
-        handleOpenClose()
+        handleOpenClose(false)
     };
 
+    useEffect(() => {
+        if (!isExpanded && (searchQuery === "" || searchQuery !== selectedText)) {
+            setSearchQuery(prevSelectedText)
+        }
+    }, [isExpanded])
+
     const handleOpenClose = (isExpandedConst) => {
-        console.log({ isExpandedConst });
         const newIsExpandedValue = isExpandedConst !== undefined && isExpanded !== null ? isExpandedConst : !isExpanded
-        console.log(newIsExpandedValue);
+
         if (newIsExpandedValue) {
+            textInputRef?.current?.focus()
             Animated.timing(optionsHeight, {
                 toValue: ScaleSize['48'] * maxItemShow, // Change this value to the desired height of the options container
                 duration: 350,
@@ -109,6 +122,14 @@ const SelectOption = ({ options, placeholder, hasSearch, validation = () => { re
                 useNativeDriver: false,
             }).start();
 
+            Animated.timing(optionsRotate, {
+                toValue: 0,
+                duration: 350,
+                easing: Easing.linear,
+                useNativeDriver: false,
+            }).start();
+
+            setSearchQuery('')
             setIsExpanded(newIsExpandedValue);
 
         } else {
@@ -119,19 +140,39 @@ const SelectOption = ({ options, placeholder, hasSearch, validation = () => { re
                 useNativeDriver: false,
             }).start();
 
-            Sleep(350).then(() => {
-                Keyboard.dismiss();
-                setIsExpanded(newIsExpandedValue);
-            })
+            Animated.timing(optionsRotate, {
+                toValue: 1,
+                duration: 350,
+                easing: Easing.linear,
+                useNativeDriver: false,
+            }).start();
+
+
+            Sleep(350)
+                .then(() => {
+                    Keyboard.dismiss();
+                    setIsExpanded(newIsExpandedValue);
+                    return Sleep(150)
+                })
 
         }
     };
+
+    const handleTextInputBlur = (e) => {
+        handleOpenClose(false)
+    }
 
     const filteredOptions = Array.isArray(options) ? options.filter(option => option.label.toLowerCase().includes(searchQuery.toLowerCase())) : [];
 
     return (
         <View style={styles.container}>
-            <TouchableOpacity activeOpacity={0.6} style={styles.selectContainer} onPress={handleOpenClose}>
+            <TouchableOpacity
+                activeOpacity={0.6}
+                style={[styles.selectContainer]}
+                onPress={() => {
+                    handleOpenClose()
+                }}
+            >
                 <View style={styles.selectedText}>
                     {
                         hasSearch ? (
@@ -144,17 +185,24 @@ const SelectOption = ({ options, placeholder, hasSearch, validation = () => { re
                                 onPressIn={() => {
                                     handleOpenClose()
                                 }}
-                                onBlur={() => {
-                                    handleOpenClose(false)
-                                }}
+                                onBlur={handleTextInputBlur}
                             />
                         ) : (<Text style={styles.selectText}>{selectedText || placeholder}</Text>)
                     }
 
                 </View>
-                <View style={styles.dropdownIconContainer}>
-                    <Text style={[styles.dropdownIcon, { color: Color.Brand }]}>&#9660;</Text>
-                </View>
+                <Animated.View
+                    style={[
+                        styles.dropdownIconContainer,
+                        {
+                            transform: [
+                                { rotateX: spin }
+                            ],
+                        }
+                    ]}
+                >
+                    <Text style={[styles.dropdownIcon, { color: Color.Brand }]} disabled>&#9660;</Text>
+                </Animated.View>
             </TouchableOpacity>
 
             <Animated.View
@@ -170,6 +218,7 @@ const SelectOption = ({ options, placeholder, hasSearch, validation = () => { re
                     style={{ height: '100%', width: '100%' }}
                     data={filteredOptions}
                     scrollEnabled
+                    keyboardShouldPersistTaps={'always'}
                     renderItem={({ item, index }) => (
                         <TouchableOpacity
                             style={[
@@ -178,9 +227,9 @@ const SelectOption = ({ options, placeholder, hasSearch, validation = () => { re
                                     borderBottomWidth: index === filteredOptions.length - 1 ? 0 : ScaleSize['1']
                                 }
                             ]}
-                            onPress={() => handleSelect(item)}
+                            onPressIn={() => handleSelect(item)}
                         >
-                            <Text style={styles.optionText}>{item.label}</Text>
+                            <Text disabled style={styles.optionText}>{item.label}</Text>
                         </TouchableOpacity>
                     )}
                     keyExtractor={item => item.value}
